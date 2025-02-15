@@ -1,45 +1,99 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, Trash2, Edit2, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { db } from "@/lib/firebase"
+import { 
+  collection, 
+  addDoc, 
+  deleteDoc, 
+  updateDoc, 
+  doc, 
+  onSnapshot,
+  query,
+  orderBy,
+  Timestamp
+} from 'firebase/firestore'
 
 interface Todo {
-  id: number
+  id: string
   text: string
   completed: boolean
+  createdAt: Timestamp
 }
 
 export default function TodoList() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState("")
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
 
-  const addTodo = () => {
+  // Fetch todos from Firestore
+  useEffect(() => {
+    const q = query(collection(db, "todos"), orderBy("createdAt", "desc"))
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const todosData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Todo[]
+      setTodos(todosData)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  const addTodo = async () => {
     if (newTodo.trim() !== "") {
-      setTodos([...todos, { id: Date.now(), text: newTodo, completed: false }])
-      setNewTodo("")
+      try {
+        await addDoc(collection(db, "todos"), {
+          text: newTodo,
+          completed: false,
+          createdAt: Timestamp.now()
+        })
+        setNewTodo("")
+      } catch (error) {
+        console.error("Error adding todo:", error)
+      }
     }
   }
 
-  const deleteTodo = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id))
+  const deleteTodo = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "todos", id))
+    } catch (error) {
+      console.error("Error deleting todo:", error)
+    }
   }
 
-  const toggleComplete = (id: number) => {
-    setTodos(todos.map((todo) => (todo.id === id ? { ...todo, completed: !todo.completed } : todo)))
+  const toggleComplete = async (id: string) => {
+    const todoToUpdate = todos.find(todo => todo.id === id)
+    if (todoToUpdate) {
+      try {
+        await updateDoc(doc(db, "todos", id), {
+          completed: !todoToUpdate.completed
+        })
+      } catch (error) {
+        console.error("Error toggling todo:", error)
+      }
+    }
   }
 
-  const startEditing = (id: number, text: string) => {
+  const startEditing = (id: string, text: string) => {
     setEditingId(id)
     setEditText(text)
   }
 
-  const saveEdit = (id: number) => {
-    setTodos(todos.map((todo) => (todo.id === id ? { ...todo, text: editText } : todo)))
-    setEditingId(null)
+  const saveEdit = async (id: string) => {
+    try {
+      await updateDoc(doc(db, "todos", id), {
+        text: editText
+      })
+      setEditingId(null)
+    } catch (error) {
+      console.error("Error updating todo:", error)
+    }
   }
 
   const cancelEdit = () => {
